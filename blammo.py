@@ -7,8 +7,9 @@ import csv
 class Tile(pygame.sprite.Sprite):
     spawn_x = 0
     spawn_y = 0
+    collison = False
     
-    def __init__(self, image, x, y):
+    def __init__(self, image, x, y, collison):
         pygame.sprite.Sprite.__init__(self)
         self.image = image
         self.rect = self.image.get_rect()
@@ -16,6 +17,7 @@ class Tile(pygame.sprite.Sprite):
         self.spawn_y = y
         self.rect.x = x
         self.rect.y = y
+        self.collison = collison
     
     def pos(self, x, y):
         self.rect.x = self.spawn_x - x
@@ -42,7 +44,7 @@ pygame.display.set_caption("blammo")
 player_size = 32
 player_x = WIDTH // 2
 player_y = HEIGHT // 2
-player_speed = 5
+player_speed = 8
 
 enemy_size = 16
 enemy_speed = 3
@@ -56,6 +58,8 @@ ammo_x = 0
 ammo_y = 0
 
 tiles = pygame.sprite.Group()
+GRASS = 1000
+WATER = 1001
 grass_image = pygame.image.load("grass.png")
 water_image = pygame.image.load("water.png")
 
@@ -69,11 +73,13 @@ with open("map.csv", "r") as file:
         
 for row_index, row in enumerate(map):
     for col_index, value in enumerate(row):
-        if value == 1000:
+        collision = False
+        if value == GRASS:
             image = grass_image
-        elif value == 1001:
+        elif value == WATER:
             image = water_image
-        tile = Tile(image, col_index * SQUARE_SIZE, row_index * SQUARE_SIZE)
+            collision = True
+        tile = Tile(image, col_index * SQUARE_SIZE, row_index * SQUARE_SIZE, collision)
         tiles.add(tile)
         
 def spawn_enemy():
@@ -134,9 +140,18 @@ def reset_game():
     ammo_y = 0
     ammo_spawned = False
 
+def check_col(x, y):
+    rect = pygame.Rect(player_x - dummy_camera.x + x, player_y - dummy_camera.y + y, player_size, player_size)
+    for tile in tiles:
+        if tile.collison and pygame.Rect.colliderect(tile.rect, rect):
+            return True
+    return False
+                
 running = True
 enemy_spawn_timer = 0
 while running:
+    pygame.time.Clock().tick(60)
+    pygame.display.flip()
     screen.fill(BLACK)
 
     for event in pygame.event.get():
@@ -149,32 +164,43 @@ while running:
                 destroy_green_enemies()
 
     keys = pygame.key.get_pressed()
+    frame = screen.get_rect()
+    camera = frame.copy()
+    
+    collide = False
+    dummy_camera = frame.copy()
+    dummy_camera.center = pygame.Rect(player_x - dummy_camera.x, player_y - dummy_camera.y, player_size, player_size).center
+    dummy_player_rect = pygame.Rect(player_x - dummy_camera.x, player_y - dummy_camera.y, player_size, player_size)
+    for tile in tiles:
+        tile.pos(dummy_camera.x, dummy_camera.y)
+    tiles.draw(screen) 
     if keys[pygame.K_w]:
-        player_y -= player_speed
+        if not check_col(0, -player_speed):
+            player_y -= player_speed
     if keys[pygame.K_s]:
-        player_y += player_speed
+        if not check_col(0, player_speed):
+            player_y += player_speed
     if keys[pygame.K_a]:
-        player_x -= player_speed
+        if not check_col(-player_speed, 0):
+            player_x -= player_speed
     if keys[pygame.K_d]:
-        player_x += player_speed
+        for tile in tiles:
+            if pygame.Rect.colliderect(tile.rect, pygame.Rect(player_x - dummy_camera.x + player_speed, player_y - dummy_camera.y, player_size, player_size)):
+                collide = True
+        if not check_col(player_speed, 0):
+            player_x += player_speed
     if keys[pygame.K_ESCAPE]:
         pygame.quit()
         sys.exit()
 
-    frame = screen.get_rect()
-    camera = frame.copy()
     camera.center = pygame.Rect(player_x - camera.x, player_y - camera.y, player_size, player_size).center
-    
-    for tile in tiles:
-        tile.pos(camera.x, camera.y)
-    tiles.draw(screen)
+
+    player_rect = pygame.draw.rect(screen, WHITE, pygame.Rect(player_x - camera.x, player_y - camera.y, player_size, player_size))
     
     enemy_spawn_timer += 1
     if enemy_spawn_timer >= 60: 
         spawn_enemy()
         enemy_spawn_timer = 0
-
-    player_rect = pygame.draw.rect(screen, WHITE, (player_x - camera.x, player_y - camera.y, player_size, player_size))
     
     for enemy in enemies:
         move_enemy(enemy)
@@ -205,10 +231,6 @@ while running:
 
     ammo_text_surface = font.render("Ammo: " + str(ammo), True, (255, 255, 255))
     screen.blit(ammo_text_surface, [5,30])
-
-    pygame.display.flip()
-
-    pygame.time.Clock().tick(60)
 
 pygame.quit()
 sys.exit()
