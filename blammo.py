@@ -27,9 +27,9 @@ pygame.init()
 pygame.font.init()
 font = pygame.font.Font(None, 36)
 
-WIDTH, HEIGHT = 800, 600
-GAMEWORLD_WIDTH, GAMEWORLD_HEIGHT = 1000, 1000
-SQUARE_SIZE = 16
+WIDTH, HEIGHT = 800, 640
+GAMEWORLD_WIDTH, GAMEWORLD_HEIGHT = 1024, 1024
+SQUARE_SIZE = 32
 
 WHITE = (255, 255, 255)
 BLACK = (0, 0, 0)
@@ -58,8 +58,8 @@ ammo_x = 0
 ammo_y = 0
 
 tiles = pygame.sprite.Group()
-GRASS = 1000
-WATER = 1001
+GRASS = 1001
+WATER = 1000
 grass_image = pygame.image.load("grass.png")
 water_image = pygame.image.load("water.png")
 
@@ -103,16 +103,43 @@ def spawn_ammo():
     ammo_x = random.randint(25, WIDTH - 25)
     ammo_y = random.randint(25, HEIGHT - 25)
 
-def move_enemy(enemy):
-    dx = player_x  - enemy[0]
-    dy = player_y  - enemy[1]
+def move_enemy(enemy, camera):
+    dx = player_x - enemy[0]
+    dy = player_y - enemy[1]
+        
     dist = math.sqrt(dx ** 2 + dy ** 2)
     if dist != 0:
         dx /= dist
         dy /= dist
     extra_speed = float(score + 1) * 0.01 + 1
-    enemy[0] += dx * enemy_speed * extra_speed
-    enemy[1] += dy * enemy_speed * extra_speed
+    
+    movement_x = int(dx * enemy_speed * extra_speed)
+    movement_y = int(dy * enemy_speed * extra_speed)
+    
+    if movement_x > 0:
+        rect = pygame.Rect(enemy[0] - camera.x + movement_x, enemy[1] - camera.y, enemy_size, enemy_size)
+        if check_col(rect):
+            movement_x = 0
+    elif movement_x < 0:
+        rect = pygame.Rect(enemy[0] - camera.x + movement_x, enemy[1] - camera.y, enemy_size, enemy_size)
+        if check_col(rect):
+            movement_x = 0
+    if movement_y > 0:
+        rect = pygame.Rect(enemy[0] - camera.x, enemy[1] - camera.y + movement_y, enemy_size, enemy_size)
+        if check_col(rect):
+            movement_y = 0
+    elif movement_y < 0:
+        rect = pygame.Rect(enemy[0] - camera.x, enemy[1] - camera.y + movement_y, enemy_size, enemy_size)
+        if check_col(rect):
+            movement_y = 0
+        
+    enemy[0] += movement_x
+    enemy[1] += movement_y
+
+    enemy_rect = pygame.draw.rect(screen, enemy[2], (enemy[0] - camera.x, enemy[1] - camera.y, enemy_size, enemy_size))
+
+    if player_rect.colliderect(enemy_rect):
+        reset_game()
 
 def destroy_green_enemies():
     list = []
@@ -140,8 +167,7 @@ def reset_game():
     ammo_y = 0
     ammo_spawned = False
 
-def check_col(x, y):
-    rect = pygame.Rect(player_x - dummy_camera.x + x, player_y - dummy_camera.y + y, player_size, player_size)
+def check_col(rect):
     for tile in tiles:
         if tile.collison and pygame.Rect.colliderect(tile.rect, rect):
             return True
@@ -174,20 +200,22 @@ while running:
     for tile in tiles:
         tile.pos(dummy_camera.x, dummy_camera.y)
     tiles.draw(screen) 
+    
     if keys[pygame.K_w]:
-        if not check_col(0, -player_speed):
+        rect = pygame.Rect(player_x - dummy_camera.x, player_y - dummy_camera.y - player_speed, player_size, player_size)
+        if not check_col(rect):
             player_y -= player_speed
     if keys[pygame.K_s]:
-        if not check_col(0, player_speed):
+        rect = pygame.Rect(player_x - dummy_camera.x, player_y - dummy_camera.y + player_speed, player_size, player_size)
+        if not check_col(rect):
             player_y += player_speed
     if keys[pygame.K_a]:
-        if not check_col(-player_speed, 0):
+        rect = pygame.Rect(player_x - dummy_camera.x - player_speed, player_y - dummy_camera.y, player_size, player_size)
+        if not check_col(rect):
             player_x -= player_speed
     if keys[pygame.K_d]:
-        for tile in tiles:
-            if pygame.Rect.colliderect(tile.rect, pygame.Rect(player_x - dummy_camera.x + player_speed, player_y - dummy_camera.y, player_size, player_size)):
-                collide = True
-        if not check_col(player_speed, 0):
+        rect = pygame.Rect(player_x - dummy_camera.x + player_speed, player_y - dummy_camera.y, player_size, player_size)
+        if not check_col(rect):
             player_x += player_speed
     if keys[pygame.K_ESCAPE]:
         pygame.quit()
@@ -203,18 +231,13 @@ while running:
         enemy_spawn_timer = 0
     
     for enemy in enemies:
-        move_enemy(enemy)
+        move_enemy(enemy, camera)
 
         dist = math.sqrt((player_x - enemy[0]) ** 2 + (player_y - enemy[1]) ** 2)
         if dist < 200:
             enemy[2] = GREEN
         else:
             enemy[2] = RED
-            
-        enemy_rect = pygame.draw.rect(screen, enemy[2], (enemy[0] - camera.x, enemy[1] - camera.y, enemy_size, enemy_size))
-
-        if player_rect.colliderect(enemy_rect):
-            reset_game()
 
     if not ammo_spawned:
         ammo_spawned = True
