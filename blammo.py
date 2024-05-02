@@ -8,7 +8,7 @@ import csv
 class Tile(pygame.sprite.Sprite):
     spawn_x = 0
     spawn_y = 0
-    collison = False
+    collision = False
 
     def __init__(self, _image, x, y, collison):
         pygame.sprite.Sprite.__init__(self)
@@ -18,11 +18,62 @@ class Tile(pygame.sprite.Sprite):
         self.spawn_y = y
         self.rect.x = x
         self.rect.y = y
-        self.collison = collison
+        self.collision = collison
 
-    def pos(self, x, y):
-        self.rect.x = self.spawn_x - x
-        self.rect.y = self.spawn_y - y
+    def camera_offset(self, _camera):
+        self.rect.x = self.spawn_x - _camera.x
+        self.rect.y = self.spawn_y - _camera.y
+
+
+class Enemy(pygame.sprite.Sprite):
+    def __init__(self, x, y, target):
+        pygame.sprite.Sprite.__init__(self)
+        self.image_out_of_range = pygame.image.load('enemy.png')
+        self.image_in_range = pygame.image.load('enemy_target.png')
+        self.in_range = False
+        self.image = pygame.image.load('enemy.png')
+        self.rect = pygame.Rect(x, y, enemy_size, enemy_size)
+        self.positional_rect = pygame.Rect(x, y, enemy_size, enemy_size)
+        self.target = target
+
+    def set_out_of_range(self):
+        self.image = self.image_out_of_range
+        self.in_range = False
+
+    def set_in_range(self):
+        self.image = self.image_in_range
+        self.in_range = True
+
+    def get_is_in_range(self):
+        return self.in_range
+
+    def set_target(self, target):
+        self.target = target
+
+    def move(self, _camera, _tiles):
+        if self.positional_rect.x < self.target.x and not self.check_col(_camera, _tiles, enemy_speed,
+                                                                         0) and self.positional_rect.x + self.target.x > enemy_speed:
+            self.positional_rect.x += enemy_speed
+        elif self.positional_rect.x > self.target.x and not self.check_col(_camera, _tiles, -enemy_speed,
+                                                                           0) and self.positional_rect.x - self.target.x > enemy_speed:
+            self.positional_rect.x -= enemy_speed
+
+        if self.positional_rect.y < self.target.y and not self.check_col(_camera, _tiles, 0,
+                                                                         enemy_speed) and self.positional_rect.y + self.target.y > enemy_speed:
+            self.positional_rect.y += enemy_speed
+        elif self.positional_rect.y > self.target.y and not self.check_col(_camera, _tiles, 0,
+                                                                           -enemy_speed) and self.positional_rect.y - self.target.y > enemy_speed:
+            self.positional_rect.y -= enemy_speed
+
+    def check_col(self, _camera, _tiles, x, y):
+        copy = pygame.Rect.copy(self.positional_rect)
+        copy = copy.move(x - _camera.x, y - _camera.y)
+
+        for _tile in _tiles:
+            if _tile.collision and pygame.Rect.colliderect(_tile.rect, copy):
+                return True
+
+        return False
 
 
 pygame.init()
@@ -47,10 +98,12 @@ player_size = 32
 player_x = WIDTH // 2
 player_y = HEIGHT // 2
 player_speed = 8
+player_rect = pygame.Rect(player_x, player_y, player_size, player_size)
+player_render_rect = player_rect
 
-enemy_size = 16
+enemy_size = 32
 enemy_speed = 3
-enemies = []
+enemies = pygame.sprite.Group()
 
 score = 0
 ammo = 3
@@ -100,7 +153,7 @@ def spawn_enemy():
     else:
         x = -enemy_size
         y = random.randint(0, HEIGHT - enemy_size)
-    enemies.append([x, y, RED])
+    enemies.add(Enemy(x, y, player_rect))
 
 
 def spawn_ammo():
@@ -109,50 +162,10 @@ def spawn_ammo():
     ammo_y = random.randint(25, HEIGHT - 25)
 
 
-def move_enemy(_enemy, _camera):
-    dx = player_x - _enemy[0]
-    dy = player_y - _enemy[1]
-
-    _dist = math.sqrt(dx ** 2 + dy ** 2)
-    if _dist != 0:
-        dx /= _dist
-        dy /= _dist
-    extra_speed = float(score + 1) * 0.01 + 1
-
-    movement_x = int(dx * enemy_speed * extra_speed)
-    movement_y = int(dy * enemy_speed * extra_speed)
-
-    if movement_x > 0:
-        _rect = pygame.Rect(_enemy[0] - _camera.x + movement_x, _enemy[1] - _camera.y, enemy_size, enemy_size)
-        if check_col(_rect):
-            movement_x = 0
-    elif movement_x < 0:
-        _rect = pygame.Rect(_enemy[0] - _camera.x + movement_x, _enemy[1] - _camera.y, enemy_size, enemy_size)
-        if check_col(_rect):
-            movement_x = 0
-    if movement_y > 0:
-        _rect = pygame.Rect(_enemy[0] - _camera.x, _enemy[1] - _camera.y + movement_y, enemy_size, enemy_size)
-        if check_col(_rect):
-            movement_y = 0
-    elif movement_y < 0:
-        _rect = pygame.Rect(_enemy[0] - _camera.x, _enemy[1] - _camera.y + movement_y, enemy_size, enemy_size)
-        if check_col(_rect):
-            movement_y = 0
-
-    _enemy[0] += movement_x
-    _enemy[1] += movement_y
-
-    enemy_rect = pygame.draw.rect(screen, _enemy[2],
-                                  (_enemy[0] - _camera.x, _enemy[1] - _camera.y, enemy_size, enemy_size))
-
-    if player_rect.colliderect(enemy_rect):
-        reset_game()
-
-
 def destroy_green_enemies():
     _list = []
     for _enemy in enemies:
-        if _enemy[2] == GREEN:
+        if _enemy.get_is_in_range():
             _list.append(_enemy)
 
     if len(_list) > 0:
@@ -169,7 +182,7 @@ def reset_game():
     global player_x, player_y, enemies, score, ammo, ammo_x, ammo_y, ammo_spawned, tiles
     player_x = WIDTH // 2
     player_y = HEIGHT // 2
-    enemies = []
+    enemies = pygame.sprite.Group()
     score = 0
     ammo = 3
     ammo_x = 0
@@ -179,16 +192,16 @@ def reset_game():
 
 def check_col(_rect):
     for _tile in tiles:
-        if _tile.collison and pygame.Rect.colliderect(_tile.rect, _rect):
+        if _tile.collision and pygame.Rect.colliderect(_tile.rect, _rect):
             return True
     return False
 
 
 running = True
 enemy_spawn_timer = 0
+clock = pygame.time.Clock()
 while running:
-    pygame.time.Clock().tick(60)
-    pygame.display.flip()
+    clock.tick(60)
     screen.fill(BLACK)
 
     for event in pygame.event.get():
@@ -205,42 +218,31 @@ while running:
     camera = frame.copy()
 
     collide = False
-    dummy_camera = frame.copy()
-    dummy_camera.center = pygame.Rect(player_x - dummy_camera.x, player_y - dummy_camera.y, player_size,
-                                      player_size).center
-    dummy_player_rect = pygame.Rect(player_x - dummy_camera.x, player_y - dummy_camera.y, player_size, player_size)
-    for tile in tiles:
-        tile.pos(dummy_camera.x, dummy_camera.y)
-    tiles.draw(screen)
 
     if keys[pygame.K_w]:
-        rect = pygame.Rect(player_x - dummy_camera.x, player_y - dummy_camera.y - player_speed, player_size,
-                           player_size)
-        if not check_col(rect):
+        if not check_col(player_render_rect.move(0, -player_speed)):
             player_y -= player_speed
     if keys[pygame.K_s]:
-        rect = pygame.Rect(player_x - dummy_camera.x, player_y - dummy_camera.y + player_speed, player_size,
-                           player_size)
-        if not check_col(rect):
+        if not check_col(player_render_rect.move(0, player_speed)):
             player_y += player_speed
     if keys[pygame.K_a]:
-        rect = pygame.Rect(player_x - dummy_camera.x - player_speed, player_y - dummy_camera.y, player_size,
-                           player_size)
-        if not check_col(rect):
+        if not check_col(player_render_rect.move(-player_speed, 0)):
             player_x -= player_speed
     if keys[pygame.K_d]:
-        rect = pygame.Rect(player_x - dummy_camera.x + player_speed, player_y - dummy_camera.y, player_size,
-                           player_size)
-        if not check_col(rect):
+        if not check_col(player_render_rect.move(player_speed, 0)):
             player_x += player_speed
     if keys[pygame.K_ESCAPE]:
         pygame.quit()
         sys.exit()
 
-    camera.center = pygame.Rect(player_x - camera.x, player_y - camera.y, player_size, player_size).center
+    player_rect = pygame.Rect(player_x, player_y, player_size, player_size)
+    camera.center = player_rect.center
 
-    player_rect = pygame.draw.rect(screen, WHITE,
-                                   pygame.Rect(player_x - camera.x, player_y - camera.y, player_size, player_size))
+    for tile in tiles:
+        tile.camera_offset(camera)
+    tiles.draw(screen)
+
+    player_render_rect = pygame.draw.rect(screen, WHITE, player_rect.move(-camera.x, -camera.y))
 
     enemy_spawn_timer += 1
     if enemy_spawn_timer >= 60:
@@ -248,13 +250,17 @@ while running:
         enemy_spawn_timer = 0
 
     for enemy in enemies:
-        move_enemy(enemy, camera)
+        enemy.target = player_rect
+        enemy.move(camera, tiles)
 
-        dist = math.sqrt((player_x - enemy[0]) ** 2 + (player_y - enemy[1]) ** 2)
+        dist = math.sqrt((enemy.target.x - enemy.positional_rect.x) ** 2 + (enemy.target.y - enemy.positional_rect.y) ** 2)
         if dist < 200:
-            enemy[2] = GREEN
+            enemy.set_in_range()
         else:
-            enemy[2] = RED
+            enemy.set_out_of_range()
+
+        enemy.rect = enemy.positional_rect.move(-camera.x, -camera.y)
+    enemies.draw(screen)
 
     if not ammo_spawned:
         ammo_spawned = True
@@ -262,7 +268,7 @@ while running:
 
     ammo_rect = pygame.draw.rect(screen, WHITE, (ammo_x - camera.x, ammo_y - camera.y, 15, 15))
 
-    if player_rect.colliderect(ammo_rect):
+    if player_render_rect.colliderect(ammo_rect):
         ammo += 1
         ammo_spawned = False
 
@@ -272,5 +278,6 @@ while running:
     ammo_text_surface = font.render("Ammo: " + str(ammo), True, (255, 255, 255))
     screen.blit(ammo_text_surface, [5, 30])
 
+    pygame.display.flip()
 pygame.quit()
 sys.exit()
